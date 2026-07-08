@@ -1,0 +1,6 @@
+# Install the latest yt-dlp — YouTube changes often and old versions break.
+# Use:  pip install -U --pre "yt-dlp[default]"
+yt-dlp[default]
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
