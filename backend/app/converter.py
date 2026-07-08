@@ -21,12 +21,32 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Unset locally (residential IP usually works without it).
 COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
 
+# yt-dlp writes refreshed cookies back to the file, but Render Secret Files are
+# mounted read-only. Copy the source to a writable path and use that copy.
+_WRITABLE_COOKIES: str | None = None
+
+
+def _get_cookies_path() -> str | None:
+    """Return a writable copy of the cookies file, or None if not configured."""
+    global _WRITABLE_COOKIES
+    if not COOKIES_FILE or not os.path.exists(COOKIES_FILE):
+        return None
+    if _WRITABLE_COOKIES and os.path.exists(_WRITABLE_COOKIES):
+        return _WRITABLE_COOKIES
+    import shutil
+
+    dest = str(OUTPUT_DIR / "cookies.txt")
+    shutil.copyfile(COOKIES_FILE, dest)
+    _WRITABLE_COOKIES = dest
+    return dest
+
 
 def _base_opts() -> dict:
     """Common yt-dlp options, including cookies when configured."""
     opts: dict = {"quiet": True, "no_warnings": True, "noplaylist": True}
-    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
-        opts["cookiefile"] = COOKIES_FILE
+    cookies = _get_cookies_path()
+    if cookies:
+        opts["cookiefile"] = cookies
     return opts
 
 
