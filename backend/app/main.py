@@ -20,7 +20,11 @@ API_SECRET = os.environ.get("API_SECRET", "").strip()
 # CORS: restrict to the deployed frontend when ALLOWED_ORIGIN is set; else allow all
 # (local dev). Comma-separate multiple origins.
 _origins_env = os.environ.get("ALLOWED_ORIGIN", "").strip()
-ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
+# Strip trailing slashes — the browser's Origin header never has one, so a
+# configured "https://site.app/" would otherwise fail to match.
+ALLOWED_ORIGINS = [
+    o.strip().rstrip("/") for o in _origins_env.split(",") if o.strip()
+] or ["*"]
 
 app.add_middleware(
     CORSMiddleware,

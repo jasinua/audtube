@@ -16,10 +16,23 @@ from .validators import (
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/tmp/audtube"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# Path to a Netscape-format cookies.txt exported from a logged-in YouTube
+# session. Required on datacenter hosts (Render) where YouTube demands sign-in.
+# Unset locally (residential IP usually works without it).
+COOKIES_FILE = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+
+
+def _base_opts() -> dict:
+    """Common yt-dlp options, including cookies when configured."""
+    opts: dict = {"quiet": True, "no_warnings": True, "noplaylist": True}
+    if COOKIES_FILE and os.path.exists(COOKIES_FILE):
+        opts["cookiefile"] = COOKIES_FILE
+    return opts
+
 
 def probe(url: str) -> dict:
     """Fetch metadata without downloading, for instant UI feedback."""
-    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True}
+    opts = {**_base_opts(), "skip_download": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
         try:
             info = ydl.extract_info(url, download=False)
@@ -45,11 +58,9 @@ def convert(url: str, fmt: str, quality: str) -> dict:
 
     if fmt == "mp3":
         opts = {
+            **_base_opts(),
             "format": "bestaudio/best",
             "outtmpl": out_stem + ".%(ext)s",
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -62,6 +73,7 @@ def convert(url: str, fmt: str, quality: str) -> dict:
         ext = "mp3"
     else:  # mp4
         opts = {
+            **_base_opts(),
             "format": (
                 f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/"
                 f"bestvideo[height<={quality}]+bestaudio/"
@@ -69,9 +81,6 @@ def convert(url: str, fmt: str, quality: str) -> dict:
             ),
             "merge_output_format": "mp4",
             "outtmpl": out_stem + ".%(ext)s",
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
         }
         ext = "mp4"
 
