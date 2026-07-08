@@ -63,6 +63,31 @@ def health():
     return {"ok": True}
 
 
+@app.get("/api/debug")
+def debug(url: str = Query(...), _=Depends(require_key)):
+    """Temporary diagnostic: returns the raw yt-dlp error + cookies status."""
+    cookies = converter.COOKIES_FILE
+    result = {
+        "cookies_configured": bool(cookies),
+        "cookies_path": cookies or None,
+        "cookies_exists": bool(cookies) and os.path.exists(cookies),
+    }
+    import yt_dlp
+
+    try:
+        clean = validate_url(url)
+        opts = {**converter._base_opts(), "skip_download": True}
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info_data = ydl.extract_info(clean, download=False)
+        result["ok"] = True
+        result["title"] = info_data.get("title")
+    except Exception as e:  # noqa: BLE001 — diagnostic wants the raw text.
+        result["ok"] = False
+        result["error_type"] = type(e).__name__
+        result["error"] = str(e)[:800]
+    return result
+
+
 @app.get("/api/info")
 def info(url: str = Query(...), _=Depends(require_key)):
     """Metadata preview shown as soon as the user pastes a link."""
@@ -71,6 +96,11 @@ def info(url: str = Query(...), _=Depends(require_key)):
         return converter.probe(clean)
     except ValidationError as e:
         return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception:  # noqa: BLE001 — return clean JSON (with CORS) not a bare 500.
+        return JSONResponse(
+            status_code=502,
+            content={"error": "Couldn't reach YouTube for this video. Try again."},
+        )
 
 
 @app.post("/api/convert")

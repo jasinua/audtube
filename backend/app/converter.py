@@ -33,11 +33,13 @@ def _base_opts() -> dict:
 def probe(url: str) -> dict:
     """Fetch metadata without downloading, for instant UI feedback."""
     opts = {**_base_opts(), "skip_download": True}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        try:
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-        except yt_dlp.utils.DownloadError as e:
-            raise ValidationError(_friendly_error(str(e)))
+    except yt_dlp.utils.DownloadError as e:
+        raise ValidationError(_friendly_error(str(e)))
+    except Exception as e:  # noqa: BLE001 — e.g. bad cookies file; still return clean.
+        raise ValidationError(_friendly_error(str(e)))
 
     duration = info.get("duration") or 0
     if duration > MAX_DURATION_SECONDS:
