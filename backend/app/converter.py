@@ -41,25 +41,50 @@ def _get_cookies_path() -> str | None:
     return dest
 
 
-def _base_opts() -> dict:
-    """Common yt-dlp options, including cookies when configured."""
+# Player clients to try, in order. The "tv"/"mweb"/"web_embedded" clients can
+# sometimes bypass YouTube's datacenter-IP bot check when the default "web"
+# client is rejected. Overridable via YOUTUBE_PLAYER_CLIENTS (comma-separated).
+_DEFAULT_CLIENTS = ["tv", "mweb", "web_safari", "web"]
+PLAYER_CLIENTS = [
+    c.strip()
+    for c in os.environ.get("YOUTUBE_PLAYER_CLIENTS", "").split(",")
+    if c.strip()
+] or _DEFAULT_CLIENTS
+
+
+def _base_opts(client: str | None = None) -> dict:
+    """Common yt-dlp options, including cookies + a specific player client."""
     opts: dict = {"quiet": True, "no_warnings": True, "noplaylist": True}
     cookies = _get_cookies_path()
     if cookies:
         opts["cookiefile"] = cookies
+    if client:
+        opts["extractor_args"] = {"youtube": {"player_client": [client]}}
     return opts
+
+
+def _extract(url: str, extra_opts: dict, download: bool):
+    """Try each player client in turn; return (info, working_client).
+
+    YouTube may reject some clients (esp. from datacenter IPs) but accept
+    others, so we fall through the list until one succeeds.
+    """
+    last_err: Exception | None = None
+    for client in PLAYER_CLIENTS:
+        opts = {**_base_opts(client), **extra_opts}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=download)
+            return info, client
+        except Exception as e:  # noqa: BLE001 — remember and try the next client.
+            last_err = e
+            continue
+    raise ValidationError(_friendly_error(str(last_err) if last_err else ""))
 
 
 def probe(url: str) -> dict:
     """Fetch metadata without downloading, for instant UI feedback."""
-    opts = {**_base_opts(), "skip_download": True}
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except yt_dlp.utils.DownloadError as e:
-        raise ValidationError(_friendly_error(str(e)))
-    except Exception as e:  # noqa: BLE001 — e.g. bad cookies file; still return clean.
-        raise ValidationError(_friendly_error(str(e)))
+    info, _ = _extract(url, {"skip_download": True}, download=False)
 
     duration = info.get("duration") or 0
     if duration > MAX_DURATION_SECONDS:
@@ -79,8 +104,7 @@ def convert(url: str, fmt: str, quality: str) -> dict:
     out_stem = str(OUTPUT_DIR / job_id)
 
     if fmt == "mp3":
-        opts = {
-            **_base_opts(),
+        extra = {
             "format": "bestaudio/best",
             "outtmpl": out_stem + ".%(ext)s",
             "postprocessors": [
@@ -94,8 +118,7 @@ def convert(url: str, fmt: str, quality: str) -> dict:
         }
         ext = "mp3"
     else:  # mp4
-        opts = {
-            **_base_opts(),
+        extra = {
             "format": (
                 f"bestvideo[height<={quality}][ext=mp4]+bestaudio[ext=m4a]/"
                 f"bestvideo[height<={quality}]+bestaudio/"
@@ -106,11 +129,7 @@ def convert(url: str, fmt: str, quality: str) -> dict:
         }
         ext = "mp4"
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=True)
-        except yt_dlp.utils.DownloadError as e:
-            raise ValidationError(_friendly_error(str(e)))
+    info, _ = _extract(url, extra, download=True)
 
     filepath = out_stem + "." + ext
     if not os.path.exists(filepath):
