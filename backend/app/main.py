@@ -72,6 +72,24 @@ def debug(url: str = Query(...), _=Depends(require_key)):
         "cookies_path": cookies or None,
         "cookies_exists": bool(cookies) and os.path.exists(cookies),
     }
+    # Inspect the cookies file (names only, never values) to confirm auth
+    # cookies are actually present.
+    try:
+        path = converter._get_cookies_path()
+        if path and os.path.exists(path):
+            names = []
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    if line.strip() and not line.startswith("#"):
+                        parts = line.split("\t")
+                        if len(parts) >= 6:
+                            names.append(parts[5])
+            auth = {"SID", "SAPISID", "SSID", "HSID", "SIDCC", "__Secure-3PSID"}
+            result["cookie_count"] = len(names)
+            result["has_login_cookies"] = bool(auth.intersection(names))
+    except Exception as e:  # noqa: BLE001
+        result["cookie_read_error"] = str(e)[:200]
+
     import yt_dlp
 
     try:
