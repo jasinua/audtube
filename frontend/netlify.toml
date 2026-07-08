@@ -1,0 +1,11 @@
+# Netlify build config for the audtube frontend.
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+# SPA fallback so client-side routing / refresh works.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

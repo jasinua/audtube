@@ -64,6 +64,37 @@ update it:
 cd backend && ./venv/bin/pip install -U --pre "yt-dlp[default]"
 ```
 
+## Deployment (Render backend + Netlify frontend)
+
+The backend needs ffmpeg + a real server, so it can't go on Netlify. Backend →
+Render (Docker), frontend → Netlify.
+
+### 1. Push this repo to GitHub
+
+### 2. Backend on Render
+1. Render dashboard → **New → Blueprint** → pick this repo. It reads `render.yaml`.
+2. Render builds `backend/Dockerfile` (ffmpeg + deno + yt-dlp baked in).
+3. After deploy, open the service → **Environment** → copy the auto-generated
+   **`API_SECRET`** value (you'll need it for Netlify).
+4. Note the service URL, e.g. `https://audtube-backend.onrender.com`.
+
+> Free instances sleep after ~15 min idle; the first request then takes ~30s to wake.
+
+### 3. Frontend on Netlify
+1. Netlify → **Add new site → Import from Git** → pick this repo.
+   `frontend/netlify.toml` sets the base dir and build command.
+2. **Site settings → Environment variables**, add:
+   - `VITE_API_URL` = your Render URL (e.g. `https://audtube-backend.onrender.com`)
+   - `VITE_API_KEY` = the `API_SECRET` value from Render
+3. Deploy. Note your Netlify URL, e.g. `https://audtube.netlify.app`.
+
+### 4. Lock CORS to your frontend
+Back in Render → the service's **Environment** → set
+`ALLOWED_ORIGIN` = your Netlify URL → save (redeploys).
+
+Now open the Netlify URL on your phone — works from anywhere, Mac off. Add it to
+your home screen for an app-like icon.
+
 ## Notes / limits
 
 - Max video length: 2 hours. Playlists are rejected.

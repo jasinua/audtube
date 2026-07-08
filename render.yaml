@@ -1,0 +1,18 @@
+# Render blueprint for the audtube backend.
+# In Render: New > Blueprint > point at this repo. It reads this file.
+services:
+  - type: web
+    name: audtube-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # Auto-generates a strong secret. Copy its value into Netlify as VITE_API_KEY.
+      - key: API_SECRET
+        generateValue: true
+      # Set this to your Netlify site URL after the frontend is deployed,
+      # e.g. https://audtube.netlify.app
+      - key: ALLOWED_ORIGIN
+        sync: false

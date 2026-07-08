@@ -1,8 +1,9 @@
 """FastAPI entrypoint for the audtube converter."""
+import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
@@ -12,16 +13,39 @@ from .validators import ValidationError, validate_format_and_quality, validate_u
 
 app = FastAPI(title="audtube")
 
-# Allow the Vite dev server (and any local origin) to call the API.
+# Secret key required on API calls. Set API_SECRET in the environment (Render).
+# If unset (local dev), auth is disabled.
+API_SECRET = os.environ.get("API_SECRET", "").strip()
+
+# CORS: restrict to the deployed frontend when ALLOWED_ORIGIN is set; else allow all
+# (local dev). Comma-separate multiple origins.
+_origins_env = os.environ.get("ALLOWED_ORIGIN", "").strip()
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # TTL after which finished files are deleted (seconds).
 FILE_TTL_SECONDS = 30 * 60
+
+
+def require_key(x_api_key: str = Header(default="")):
+    """Reject calls without the shared secret. No-op if API_SECRET is unset."""
+    if API_SECRET and x_api_key != API_SECRET:
+        raise _Unauthorized()
+
+
+class _Unauthorized(Exception):
+    pass
+
+
+@app.exception_handler(_Unauthorized)
+def _unauth_handler(_request, _exc):
+    return JSONResponse(status_code=401, content={"error": "Unauthorized."})
 
 
 class ConvertRequest(BaseModel):
@@ -36,7 +60,7 @@ def health():
 
 
 @app.get("/api/info")
-def info(url: str = Query(...)):
+def info(url: str = Query(...), _=Depends(require_key)):
     """Metadata preview shown as soon as the user pastes a link."""
     try:
         clean = validate_url(url)
@@ -46,7 +70,7 @@ def info(url: str = Query(...)):
 
 
 @app.post("/api/convert")
-def convert(req: ConvertRequest):
+def convert(req: ConvertRequest, _=Depends(require_key)):
     """Synchronous convert: blocks until the file is ready, then returns a download path."""
     try:
         url = validate_url(req.url)
